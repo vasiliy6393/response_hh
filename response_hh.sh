@@ -2,6 +2,7 @@
 #  AUTHOR: Vasiliy Pogoreliy, vasiliy@pogoreliy.ru 
 # Скрипт написан на коленке, будет время доработаю =)
 
+# Объявляем переменные чтобы скрипт работал на любом дистрибутиве
 export PS="$(which ps)";
 export JQ="jq --compact-output"; export CAT="$(which cat)";
 export AWK="$(which awk)"; export GREP="$(which grep)";
@@ -20,17 +21,16 @@ if [[ -e "$PID_FILE" ]]; then
     if [[ "$LAST_PID" =~ ^[0-9]+$ ]]; then
         # Бывает остаются процессы-потомки, занимают место в списке процессов
         # и могут выполнить нежелательные действия. Скорее всего это связано с тем,
-        # что циклы в bash выполняются в отдельном процессе.
+        # что циклы в BASH выполняются в отдельном процессе.
         # Убиваем все процессы, кроме списка исключений, если такие имеются.
-        e="telegram_main\.sh|fs_screensaver\.sh|mouse_move_kbrd\.sh";
-        e="$e|mail_to_php_cron\.sh|nvidia-settings|xfwm4|vsync\.sh";
-        $KILL -- -$($PS -o pid=,pgid=$LAST_PID,cmd= | $GREP -Pv "$e" |
-                    $AWK '{print $1}' | $GREP -Pv "$$") > /dev/null 2>&1;
+        # e="...";
+        # $KILL -- -$($PS -o pid=,pgid=$LAST_PID,cmd= | $GREP -Pv "$e" |
+        #             $AWK '{print $1}' | $GREP -Pv "$$") > /dev/null 2>&1;
     fi
 fi
 echo "$$" > "$PID_FILE";
 
-function wait(){
+function WAIT(){
     startTime=$($DATE +%s)
     endTime=$($DATE -d "$1" +%s)
     timeToWait=$(($endTime-$startTime))
@@ -45,6 +45,8 @@ function main(){
     $CURL -s -H "$HEADERS_AUTH" "$URL/vacancies?specialization=$spec&area=3" |
     $JQ -c '.items[] | {id}' | $AWK -F\" '{print $4}' |
     while read vacancy_id; do
+        # Если в файле содержится $vacancy_id
+        # значит резюме уже отправляли, не будем зря отвлекать людей от работы
         if ! grep -Pq "^$vacancy_id$" "$LOG"; then
             RES_RESPONSE="$($CURL -H "$HEADERS_AUTH" -H "$HEADERS_CONTENT_TYPE" \
                  -s -X POST "$URL/negotiations" \
@@ -53,9 +55,13 @@ function main(){
                  -F "message=$MSG")";
             if echo "$RES_RESPONSE" | grep -Pq "$LIMIT_EXCEEDED"; then
                 # Если дневной лимит превышен
-                # Ждём 08:00 следующего дня
+                # Ждём 08:00 следующего дня.
+                # Резюме отправлено не будет, но мне это не критично -
+                # Одним больше, одним меньше - какая разница если дневной лимит пара сотен =)
+                # Тем более оно всё равно будет отправлено со следующего прогона цикла.
                 WAIT "08:00 next day";
             else
+                # echo "$RES_RESPONSE" >> $LOG; # debug
                 echo "$vacancy_id" >> $LOG;
             fi
         fi
@@ -65,9 +71,9 @@ function main(){
 while true; do
     now="$($DATE +%-H)";
     if [[ "$now" -gt "20" ]]; then
-        WAIT "08:00 next day";
+        WAIT "08:00 next day"; # Не беспокоим людей в вечернее время
     elif [[ "$now" -lt "8" ]]; then
-        WAIT "08:00"; # Ждать начала рабочего дня (08:00)
+        WAIT "08:00"; # Не беспокоим ночью, дождёмся начала рабочего дня (08:00)
     fi
     mechanic=( "<specialization>" "<resume_id>" "$MSG" );
     main "${mechanic[0]}" "${mechanic[1]}" "${mechanic[2]}"; $SLEEP 1h;
