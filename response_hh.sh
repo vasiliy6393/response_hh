@@ -1,6 +1,5 @@
 #!/bin/sh
 #  AUTHOR: Vasiliy Pogoreliy, vasiliy@pogoreliy.ru 
-# Скрипт написан на коленке, будет время доработаю =)
 
 # Объявляем переменные чтобы скрипт работал на любом дистрибутиве
 export PS="$(which ps)";
@@ -14,6 +13,9 @@ export HEADERS_AUTH="Authorization: Bearer $CODE";
 export HEADERS_CONTENT_TYPE="Content-Type=multipart/form-data";
 export LIMIT_EXCEEDED="Daily negotiations limit is exceeded";
 export MSG="Здравствуйте. Прошу Вас рассмотреть моё резюме";
+sys_admin=( "<specialization>" "<resume_id>" "$MSG <resume_name>" );
+mechanic=( "<specialization>" "<resume_id>" "$MSG <resume_name>" );
+cook=( "<specialization>" "<resume_id>" "$MSG <resume_name>" );
 
 PID_FILE='/tmp/response_hh.pid';
 if [[ -e "$PID_FILE" ]]; then
@@ -23,9 +25,9 @@ if [[ -e "$PID_FILE" ]]; then
         # и могут выполнить нежелательные действия. Скорее всего это связано с тем,
         # что циклы в BASH выполняются в отдельном процессе.
         # Убиваем все процессы, кроме списка исключений, если такие имеются.
-        # e="...";
-        # $KILL -- -$($PS -o pid=,pgid=$LAST_PID,cmd= | $GREP -Pv "$e" |
-        #             $AWK '{print $1}' | $GREP -Pv "$$") > /dev/null 2>&1;
+        e="..."; # Добавьте своё
+        $KILL -- -$($PS -o pid=,pgid=$LAST_PID,cmd= | $GREP -Pv "$e" |
+                    $AWK '{print $1}' | $GREP -Pv "$$") > /dev/null 2>&1;
     fi
 fi
 echo "$$" > "$PID_FILE";
@@ -60,8 +62,10 @@ function main(){
                 # Одним больше, одним меньше - какая разница если дневной лимит пара сотен =)
                 # Тем более оно всё равно будет отправлено со следующего прогона цикла.
                 WAIT "08:00 next day";
+            elif echo "$RES_RESPONSE" | grep -Pq "$ALREADY_APPLIED"; then
+                continue;
             else
-                # echo "$RES_RESPONSE" >> $LOG; # debug
+                [[ "a$RES_RESPONSE" != "a" ]] && echo "$RES_RESPONSE" >> $LOG;
                 echo "$vacancy_id" >> $LOG;
             fi
         fi
@@ -75,6 +79,7 @@ while true; do
     elif [[ "$now" -lt "8" ]]; then
         WAIT "08:00"; # Не беспокоим ночью, дождёмся начала рабочего дня (08:00)
     fi
-    mechanic=( "<specialization>" "<resume_id>" "$MSG" );
-    main "${mechanic[0]}" "${mechanic[1]}" "${mechanic[2]}"; $SLEEP 1h;
+    main "${sys_admin[0]}" "${sys_admin[1]}" "${sys_admin[2]}"; $SLEEP 1h;
+    main "${mechanic[0]}" "${mechanic[1]}" "${mechanic[2]}"; $SLEEP 1m;
+    main "${cook[0]}" "${cook[1]}" "${cook[2]}"; $SLEEP 1m;
 done
