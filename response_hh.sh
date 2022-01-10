@@ -1,15 +1,14 @@
 #!/bin/sh
-# AUTHOR: Vasiliy Pogoreliy, vasiliy@pogoreliy.ru 
+#  AUTHOR: Vasiliy Pogoreliy, vasiliy@pogoreliy.ru 
 
 # Объявляем переменные чтобы скрипт работал на любом дистрибутиве
-USER="%user%";
+# Хотя мне это не особо актуально, я всегда выбираю Arch-based дистры
+for i in ps cat awk grep head tail date sleep kill curl sleep date; do
+    eval $(echo "export $(echo "$i" | sed 's/.*/\U&/g')=\$(which $i);"); # немножко финт ушами =)
+done
 
-export PS="$(which ps)";
-export JQ="jq --compact-output"; export CAT="$(which cat)";
-export AWK="$(which awk)"; export GREP="$(which grep)";
-export HEAD="$(which head)"; export TAIL="$(which tail)";
-export DATE="$(which date)"; export CURL="$(which curl)";
-export SLEEP="$(which sleep)"; export KILL="$(which kill)";
+USER="vasiliy"; export JQ="$(which jq) --compact-output";
+export TELEGRAM_SEND="$(which telegram_send.sh)"
 export URL="https://api.hh.ru"; export LOG="/var/log/hh/response_hh_$USER.log";
 export CODE="$(cat /var/log/hh/hh_$USER.code)"; # код генерируется другим скриптом
 export HEADERS_AUTH="Authorization: Bearer $CODE";
@@ -22,15 +21,7 @@ PID_FILE="/tmp/response_hh_$USER.pid";
 if [[ -e "$PID_FILE" ]]; then
     LAST_PID="$($CAT "$PID_FILE")";
     if [[ "$LAST_PID" =~ ^[0-9]+$ ]]; then
-        # Бывает остаются процессы-потомки, занимают место в списке процессов
-        # и могут выполнить нежелательные действия. Скорее всего это связано с тем,
-        # что циклы в bash выполняются в отдельном процессе.
-        # Убиваем все процессы, кроме списка исключений, если такие имеются.
-        e="telegram_main\.sh|fs_screensaver\.sh|mouse_move_kbrd\.sh";
-        e="$e|mail_to_php_cron\.sh|nvidia-settings|xfwm4|vsync\.sh";
-        e="$e|hh_julie\.sh";
-        $KILL -- -$($PS -o pid=,pgid=$LAST_PID,cmd= | $GREP -Pv "$e" |
-                    $AWK '{print $1}' | $GREP -Pv "$$") > /dev/null 2>&1;
+        $KILL $LAST_PID > /dev/null 2>&1;
     fi
 fi
 echo "$$" > "$PID_FILE";
@@ -71,11 +62,12 @@ function WAIT(){
 }
 
 function main(){
+    # другой способ отправки резюме - если в будущем захочу к нему вернуться будет проще это сделать
     # area=3 - Екатериньбург
-    RESUME_ID="$1";
-    MSG="$2";
     # $CURL -s -H "$HEADERS_AUTH" "$URL/vacancies?specialization=$spec&area=3" |
     # $JQ -c '.items[] | {id}' | $AWK -F\" '{print $4}' |
+    RESUME_ID="$1";
+    MSG="$2";
     CURL -H "$HEADERS_AUTH" -s -X GET "$URL/resumes/$RESUME_ID/similar_vacancies" |
     $JQ -c '.items[] | {id}' | $AWK -F\" '{print $4}' | $HEAD -n 10 |
     while read vacancy_id; do
@@ -83,16 +75,12 @@ function main(){
         # значит резюме уже отправляли, не будем зря отвлекать людей от работы
         if ! $AWK '{print $2}' "$LOG" | grep -Pq "^$vacancy_id$"; then
             RES_RESPONSE="$($CURL -H "$HEADERS_AUTH" -H "$HEADERS_CONTENT_TYPE" \
-                -s -X POST "$URL/negotiations" \
-                -F "vacancy_id=$vacancy_id" \
-                -F "resume_id=$RESUME_ID" \
-                -F "message=$MSG")";
+                -s -X POST "$URL/negotiations" -F "vacancy_id=$vacancy_id" \
+                                               -F "resume_id=$RESUME_ID" -F "message=$MSG")";
                 [[ "a$RES_RESPONSE" != "a" ]] && echo "$RES_RESPONSE" >> $LOG;
             echo "$(date): vacancy_id=$vacancy_id resume_id=$RESUME_ID message=$MSG";
             echo "$(date): $vacancy_id" >> $LOG;
             if echo "$RES_RESPONSE" | grep -Pq "$LIMIT_EXCEEDED"; then
-                # Если дневной лимит превышен
-                # Ждём 08:00 следующего дня
                 # Если дневной лимит превышен
                 # Ждём 08:00 следующего дня.
                 # Резюме отправлено не будет, но мне это не критично -
@@ -108,6 +96,8 @@ function main(){
     done
 }
 
+# Список бывает меняю, проще поставить "#" чем менять цикл
+# Набросал однострочник и сгенерил за несколько секунд
 resume_1=(  "4e74d323ff0858e2ff0039ed1f4d6777465745" "$MSG Офисный системный администратор" );
 resume_2=(  "9d358b41ff08591f1c0039ed1f476c6d774b39" "$MSG Программист" );
 resume_3=(  "332ca78fff0919389b0039ed1f6c714664366a" "$MSG Разнорабочий на стройку" );
@@ -127,7 +117,7 @@ while true; do
     elif [[ "$now" -lt "11" ]]; then
         WAIT "08:00"; # Не беспокоим ночью, дождёмся начала рабочего дня (08:00)
     fi
-    /my_bin/telegram_send.sh "response_hh.sh: start send resumes" > /dev/null 2>&1;
+    $TELEGRAM_SEND "$0: старт рассылки резюме" > /dev/null 2>&1;
     main "${resume_1[0]}" "${resume_1[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
     main "${resume_2[0]}" "${resume_2[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
     main "${resume_3[0]}" "${resume_3[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
@@ -140,8 +130,9 @@ while true; do
     main "${resume_10[0]}" "${resume_10[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
     main "${resume_11[0]}" "${resume_11[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
     if [[ -z $FATAL_ERROR ]]; then
-        /my_bin/telegram_send.sh "response_hh.sh: resumes successfully sended" > /dev/null 2>&1;
+        $TELEGRAM_SEND "$0: резюме успешно отправлено" > /dev/null 2>&1;
     else
-        /my_bin/telegram_send.sh "response_hh.sh: your intervention is needed!" > /dev/null 2>&1;
+        $TELEGRAM_SEND "$0: ошибка, скрипт остановлен" > /dev/null 2>&1;
+        exit;
     fi
 done
