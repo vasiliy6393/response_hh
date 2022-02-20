@@ -1,13 +1,19 @@
 #!/bin/sh
 #  AUTHOR: Vasiliy Pogoreliy, vasiliy@pogoreliy.ru 
+PATH="/my_bin:$PATH";
 
 # Объявляем переменные чтобы скрипт работал на любом дистрибутиве
 # Хотя мне это не особо актуально, я всегда выбираю Arch-based дистры
-for i in ps cat awk grep head tail date sleep kill curl sleep date; do
-    eval $(echo "export $(echo "$i" | sed 's/.*/\U&/g')=\$(which $i);"); # немножко финт ушами =)
+
+export SED="$(which sed)";
+
+for i in ps cat awk grep head tail date sleep kill curl sleep; do
+    eval $(echo "export $(echo "$i" | $SED 's/.*/\U&/g')=\$(which $i);");
 done
 
-USER="vasiliy"; export JQ="$(which jq) --compact-output";
+if [[ ! -z $1 ]]; then USER="$1"; else echo "User \"$1\" not found. Exiting."; exit; fi
+
+export JQ="$(which jq) --compact-output";
 export TELEGRAM_SEND="$(which telegram_send.sh)"
 export URL="https://api.hh.ru"; export LOG="/var/log/hh/response_hh_$USER.log";
 export CODE="$(cat /var/log/hh/hh_$USER.code)"; # код генерируется другим скриптом
@@ -17,11 +23,13 @@ export LIMIT_EXCEEDED="Daily negotiations limit is exceeded";
 export ALREADY_APPLIED="Already applied";
 export MSG="Здравствуйте. Прошу Вас рассмотреть моё резюме";
 
+touch "$LOG";
+
 PID_FILE="/tmp/response_hh_$USER.pid";
 if [[ -e "$PID_FILE" ]]; then
     LAST_PID="$($CAT "$PID_FILE")";
     if [[ "$LAST_PID" =~ ^[0-9]+$ ]]; then
-        $KILL $LAST_PID > /dev/null 2>&1;
+        kill $LAST_PID > /dev/null 2>&1;
     fi
 fi
 echo "$$" > "$PID_FILE";
@@ -42,7 +50,7 @@ function WAIT(){
             timeToWait_min="$(($timeToWait_min%60))";
         fi
         if echo "$timeToWait_hour" | grep -Pq '^[0-9]$'; then
-	    timeToWait_hour="0$timeToWait_hour:";
+            timeToWait_hour="0$timeToWait_hour:";
         else
             timeToWait_hour="$timeToWait_hour:";
         fi
@@ -62,24 +70,27 @@ function WAIT(){
 }
 
 function main(){
+    # Если удастся договориться с Google, Яндекс или 2gis, в этой функции будет добавлено определение
+    # расстояния до места работы
+    
     # другой способ отправки резюме - если в будущем захочу к нему вернуться будет проще это сделать
     # area=3 - Екатериньбург
-    # $CURL -s -H "$HEADERS_AUTH" "$URL/vacancies?specialization=$spec&area=3" |
-    # $JQ -c '.items[] | {id}' | $AWK -F\" '{print $4}' |
+    # curl -s -H "$HEADERS_AUTH" "$URL/vacancies?specialization=$spec&area=3" |
+    # $JQ -c '.items[] | {id}' | awk -F\" '{print $4}' |
     RESUME_ID="$1";
     MSG="$2";
-    CURL -H "$HEADERS_AUTH" -s -X GET "$URL/resumes/$RESUME_ID/similar_vacancies" |
-    $JQ -c '.items[] | {id}' | $AWK -F\" '{print $4}' | $HEAD -n 10 |
+    curl -H "$HEADERS_AUTH" -s -X GET "$URL/resumes/$RESUME_ID/similar_vacancies" |
+    $JQ -c '.items[] | {id}' | awk -F\" '{print $4}' | head -n 10 |
     while read vacancy_id; do
         # Если в файле содержится $vacancy_id
         # значит резюме уже отправляли, не будем зря отвлекать людей от работы
-        if ! $AWK '{print $2}' "$LOG" | grep -Pq "^$vacancy_id$"; then
-            RES_RESPONSE="$($CURL -H "$HEADERS_AUTH" -H "$HEADERS_CONTENT_TYPE" \
+        if ! awk '{print $2}' "$LOG" | grep -Pq "^$vacancy_id$"; then
+            RES_RESPONSE="$(curl -H "$HEADERS_AUTH" -H "$HEADERS_CONTENT_TYPE" \
                 -s -X POST "$URL/negotiations" -F "vacancy_id=$vacancy_id" \
                                                -F "resume_id=$RESUME_ID" -F "message=$MSG")";
                 [[ "a$RES_RESPONSE" != "a" ]] && echo "$RES_RESPONSE" >> $LOG;
-            echo "$(date): vacancy_id=$vacancy_id resume_id=$RESUME_ID message=$MSG";
-            echo "$(date): $vacancy_id" >> $LOG;
+            echo "$($DATE): vacancy_id=$vacancy_id resume_id=$RESUME_ID message=$MSG";
+            echo "$($DATE): $vacancy_id" >> $LOG;
             if echo "$RES_RESPONSE" | grep -Pq "$LIMIT_EXCEEDED"; then
                 # Если дневной лимит превышен
                 # Ждём 08:00 следующего дня.
@@ -96,43 +107,41 @@ function main(){
     done
 }
 
-# Список бывает меняю, проще поставить "#" чем менять цикл
-# Набросал однострочник и сгенерил за несколько секунд
-resume_1=(  "4e74d323ff0858e2ff0039ed1f4d6777465745" "$MSG Офисный системный администратор" );
-resume_2=(  "9d358b41ff08591f1c0039ed1f476c6d774b39" "$MSG Программист" );
-resume_3=(  "332ca78fff0919389b0039ed1f6c714664366a" "$MSG Разнорабочий на стройку" );
-resume_4=(  "ee07d3dbff0900273e0039ed1f45344b474959" "$MSG Автослесарь" );
-resume_5=(  "d849f7daff09075f990039ed1f707a51596d51" "$MSG Токарь" );
-resume_6=(  "bcfadcc6ff090638620039ed1f4e4f7257446c" "$MSG Грузчик" );
-resume_7=(  "6d09a93cff0960de0e0039ed1f506b4b584d48" "$MSG Кладовщик, товаровед" );
-resume_8=(  "600d4186ff09075e1c0039ed1f396e46614258" "$MSG Слесарь МСР" );
-resume_9=(  "dcdd9af5ff094b848b0039ed1f72383069484f" "$MSG Повар-универсал" );
-resume_10=( "2d225c89ff09075dc00039ed1f67747945694d" "$MSG Ученик оператора ЧПУ" );
-resume_11=( "f10e1a58ff090760db0039ed1f596d35707473" "$MSG Ученик сварщика" );
+# Используем API для получения списка резюме для рассылки
+# Причина изменения - предоставил доступ друзьям и родственникам
+# Как будет работать если все резюме закрыты пока не проверял, проверю позже
+resume_list="$(curl -H "$HEADERS_AUTH" -s -X GET "$URL/resumes/mine" |
+                   $JQ -c '.items[] | {id, title, access}' |
+                   $AWK -F\" '{print $4" "$8" "$20}' | 
+                   $GREP -P 'видно всем компаниям' | $SED 's/ видно всем компаниям.*//')";
 
+cycle=0;
 while true; do
+    if [[ ! -z $2 ]] && [[ "$cycle" == "$2" ]]; then exit; fi
     now="$($DATE +%-H)";
-    if [[ "$now" -gt "20" ]]; then
+    if [[ "$now" -gt "22" ]]; then
         WAIT "08:00 next day"; # Не беспокоим людей в вечернее время
     elif [[ "$now" -lt "11" ]]; then
         WAIT "08:00"; # Не беспокоим ночью, дождёмся начала рабочего дня (08:00)
     fi
-    $TELEGRAM_SEND "$0: старт рассылки резюме" > /dev/null 2>&1;
-    main "${resume_1[0]}" "${resume_1[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    main "${resume_2[0]}" "${resume_2[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    main "${resume_3[0]}" "${resume_3[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    main "${resume_4[0]}" "${resume_4[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    main "${resume_5[0]}" "${resume_5[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    main "${resume_6[0]}" "${resume_6[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    main "${resume_7[0]}" "${resume_7[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    main "${resume_8[0]}" "${resume_8[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    main "${resume_9[0]}" "${resume_9[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    main "${resume_10[0]}" "${resume_10[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    main "${resume_11[0]}" "${resume_11[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
-    if [[ -z $FATAL_ERROR ]]; then
-        $TELEGRAM_SEND "$0: резюме успешно отправлено" > /dev/null 2>&1;
-    else
-        $TELEGRAM_SEND "$0: ошибка, скрипт остановлен" > /dev/null 2>&1;
+    if [[ "$cycle" -eq "0" ]]; then
+        telegram_send.sh "$0: начало рассылки резюме" > /dev/null 2>&1;
+    fi
+
+    echo "$resume_list" | while read r; do
+        rid="$(echo "$r" | $AWK '{print $1}')";
+        rname="$(echo "$r" | $SED 's/^[0-9a-zA-Z]\+ //')";
+        resume=("$rid" "$MSG \"$rname\"." );
+        main "${resume[0]}" "${resume[1]}" || FATAL_ERROR="true"; $SLEEP 1m;
+    done
+
+    if [[ ! -z $FATAL_ERROR ]]; then
+        telegram_send.sh "$0: ошибка, скрипт остановлен" > /dev/null 2>&1;
         exit;
     fi
+    if [[ ! -z $FATAL_ERROR ]]; then
+        telegram_send.sh "$0: ошибка, скрипт остановлен" > /dev/null 2>&1;
+        exit;
+    fi
+    cycle=$(($cycle+1));
 done
