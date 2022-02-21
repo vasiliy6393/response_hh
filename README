@@ -1,0 +1,9 @@
+# response_hh
+# AUTHOR: Vasiliy Pogoreliy, vasiliy@pogoreliy.tk 
+
+# Dependences:
+# jq, coreutils, curl
+
+# INSTALL
+sudo chmod a+x ./response_hh.sh;
+sudo cp ./response_hh.sh /bin; # or /usr/bin or other
