@@ -147,9 +147,5 @@ while true; do
         $TELEGRAM_SEND "$0: ошибка, скрипт остановлен" > /dev/null 2>&1;
         exit;
     fi
-    if [[ ! -z $FATAL_ERROR ]]; then
-        $TELEGRAM_SEND "$0: ошибка, скрипт остановлен" > /dev/null 2>&1;
-        exit;
-    fi
     cycle=$(($cycle+1));
 done
