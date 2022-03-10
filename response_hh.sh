@@ -8,7 +8,7 @@ for i in tr jq ps cat awk grep head tail date sleep kill curl sleep; do
     eval $(echo "export $(echo "$i" | $SED 's/.*/\U&/g')=\$(which $i);");
 done
 
-if [[ ! -z $1 ]]; then USER="$1"; else echo "User \"$1\" not found. Exiting."; exit; fi
+if [[ ! -z $1 ]]; then USER="$1"; else echo "Field \"user\" is empty. Exiting."; exit; fi
 
 export JQc="$(which jq) --compact-output";
 export TELEGRAM_SEND="$(which telegram_send.sh)"
