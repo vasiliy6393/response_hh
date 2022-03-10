@@ -2,7 +2,7 @@
 # AUTHOR: Vasiliy Pogoreliy, vasiliy@pogoreliy.tk 
 
 # Dependences:
-# jq, coreutils, curl
+# jq, tr, coreutils, curl
 
 # INSTALL
 sudo chmod a+x ./response_hh.sh;
